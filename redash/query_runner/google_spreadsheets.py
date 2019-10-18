@@ -1,4 +1,3 @@
-import json
 import logging
 from base64 import b64decode
 
@@ -7,7 +6,7 @@ from requests import Session
 from xlsxwriter.utility import xl_col_to_name
 
 from redash.query_runner import *
-from redash.utils import json_dumps
+from redash.utils import json_dumps, json_loads
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +22,7 @@ except ImportError:
 
 def _load_key(filename):
     with open(filename, "rb") as f:
-        return json.loads(f.read())
+        return json_loads(f.read())
 
 
 def _get_columns_and_column_names(row):
@@ -47,29 +46,6 @@ def _get_columns_and_column_names(row):
         })
 
     return columns, column_names
-
-
-def _guess_type(value):
-    if value == '':
-        return TYPE_STRING
-    try:
-        val = int(value)
-        return TYPE_INTEGER
-    except ValueError:
-        pass
-    try:
-        val = float(value)
-        return TYPE_FLOAT
-    except ValueError:
-        pass
-    if unicode(value).lower() in ('true', 'false'):
-        return TYPE_BOOLEAN
-    try:
-        val = parser.parse(value)
-        return TYPE_DATETIME
-    except (ValueError, OverflowError):
-        pass
-    return TYPE_STRING
 
 
 def _value_eval_list(row_values, col_types):
@@ -121,7 +97,7 @@ def parse_worksheet(worksheet):
 
     if len(worksheet) > 1:
         for j, value in enumerate(worksheet[HEADER_INDEX + 1]):
-            columns[j]['type'] = _guess_type(value)
+            columns[j]['type'] = guess_type(value)
 
     column_types = [c['type'] for c in columns]
     rows = [dict(zip(column_names, _value_eval_list(row, column_types))) for row in worksheet[HEADER_INDEX + 1:]]
@@ -148,6 +124,10 @@ class TimeoutSession(Session):
 
 
 class GoogleSpreadsheet(BaseQueryRunner):
+    def __init__(self, configuration):
+        super(GoogleSpreadsheet, self).__init__(configuration)
+        self.syntax = 'custom'
+
     @classmethod
     def annotate_query(cls):
         return False
@@ -179,7 +159,7 @@ class GoogleSpreadsheet(BaseQueryRunner):
             'https://spreadsheets.google.com/feeds',
         ]
 
-        key = json.loads(b64decode(self.configuration['jsonKeyFile']))
+        key = json_loads(b64decode(self.configuration['jsonKeyFile']))
         creds = ServiceAccountCredentials.from_json_keyfile_dict(key, scope)
 
         timeout_session = HTTPSession()
@@ -191,13 +171,22 @@ class GoogleSpreadsheet(BaseQueryRunner):
     def test_connection(self):
         self._get_spreadsheet_service()
 
+    def is_url_key(self, key):
+        if key.startswith('https://'):
+            return True
+        return False
+
     def run_query(self, query, user):
         logger.debug("Spreadsheet is about to execute query: %s", query)
         key, worksheet_num = parse_query(query)
 
         try:
             spreadsheet_service = self._get_spreadsheet_service()
-            spreadsheet = spreadsheet_service.open_by_key(key)
+
+            if self.is_url_key(key):
+                spreadsheet = spreadsheet_service.open_by_url(key)
+            else:
+                spreadsheet = spreadsheet_service.open_by_key(key)
 
             data = parse_spreadsheet(spreadsheet, worksheet_num)
 

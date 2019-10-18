@@ -1,11 +1,9 @@
-import moment from 'moment';
-
 function queryResultLink() {
   return {
     restrict: 'A',
     link(scope, element, attrs) {
       const fileType = attrs.fileType ? attrs.fileType : 'csv';
-      scope.$watch('queryResult && queryResult.getData()', (data) => {
+      scope.$watch('queryResult && queryResult.getData() && query.name', (data) => {
         if (!data) {
           return;
         }
@@ -22,11 +20,6 @@ function queryResultLink() {
             url = `api/query_results/${scope.queryResult.getId()}.${fileType}`;
           }
           element.attr('href', url);
-          element.attr(
-            'download',
-            `${scope.query.name.replace(' ', '_') +
-              moment(scope.queryResult.getUpdatedAt()).format('_YYYY_MM_DD')}.${fileType}`,
-          );
         }
       });
     },
@@ -36,3 +29,5 @@ function queryResultLink() {
 export default function init(ngModule) {
   ngModule.directive('queryResultLink', queryResultLink);
 }
+
+init.init = true;

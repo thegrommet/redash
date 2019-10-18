@@ -1,5 +1,4 @@
 import datetime
-import json
 import logging
 import sys
 import time
@@ -10,7 +9,7 @@ import requests
 
 from redash import settings
 from redash.query_runner import *
-from redash.utils import JSONEncoder
+from redash.utils import json_dumps, json_loads
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +18,6 @@ try:
     from apiclient.discovery import build
     from apiclient.errors import HttpError
     from oauth2client.service_account import ServiceAccountCredentials
-    from oauth2client.contrib import gce
 
     enabled = True
 except ImportError:
@@ -111,7 +109,8 @@ class BigQuery(BaseQueryRunner):
                 },
                 'useStandardSql': {
                     "type": "boolean",
-                    'title': "Use Standard SQL (Beta)",
+                    'title': "Use Standard SQL",
+                    "default": True,
                 },
                 'location': {
                     "type": "string",
@@ -141,7 +140,7 @@ class BigQuery(BaseQueryRunner):
             "https://www.googleapis.com/auth/drive"
         ]
 
-        key = json.loads(b64decode(self.configuration['jsonKeyFile']))
+        key = json_loads(b64decode(self.configuration['jsonKeyFile']))
 
         creds = ServiceAccountCredentials.from_json_keyfile_dict(key, scope)
         http = httplib2.Http(timeout=settings.BIGQUERY_HTTP_TIMEOUT)
@@ -236,10 +235,12 @@ class BigQuery(BaseQueryRunner):
 
     def _get_columns_schema(self, table_data):
         columns = []
-        for column in table_data['schema']['fields']:
+        for column in table_data.get('schema', {}).get('fields', []):
             columns.extend(self._get_columns_schema_column(column))
 
-        return {'name': table_data['id'], 'columns': columns}
+        project_id = self._get_project_id()
+        table_name = table_data['id'].replace("%s:" % project_id, "")
+        return {'name': table_name, 'columns': columns}
 
     def _get_columns_schema_column(self, column):
         columns = []
@@ -296,76 +297,18 @@ class BigQuery(BaseQueryRunner):
             data = self._get_query_result(jobs, query)
             error = None
 
-            json_data = json.dumps(data, cls=JSONEncoder)
+            json_data = json_dumps(data)
         except apiclient.errors.HttpError as e:
             json_data = None
             if e.resp.status == 400:
-                error = json.loads(e.content)['error']['message']
+                error = json_loads(e.content)['error']['message']
             else:
                 error = e.content
         except KeyboardInterrupt:
             error = "Query cancelled by user."
             json_data = None
-        except Exception:
-            raise sys.exc_info()[1], None, sys.exc_info()[2]
 
         return json_data, error
 
 
-class BigQueryGCE(BigQuery):
-    @classmethod
-    def type(cls):
-        return "bigquery_gce"
-
-    @classmethod
-    def enabled(cls):
-        try:
-            # check if we're on a GCE instance
-            requests.get('http://metadata.google.internal')
-        except requests.exceptions.ConnectionError:
-            return False
-
-        return True
-
-    @classmethod
-    def configuration_schema(cls):
-        return {
-            'type': 'object',
-            'properties': {
-                'totalMBytesProcessedLimit': {
-                    "type": "number",
-                    'title': 'Total MByte Processed Limit'
-                },
-                'userDefinedFunctionResourceUri': {
-                    "type": "string",
-                    'title': 'UDF Source URIs (i.e. gs://bucket/date_utils.js, gs://bucket/string_utils.js )'
-                },
-                'useStandardSql': {
-                    "type": "boolean",
-                    'title': "Use Standard SQL (Beta)",
-                },
-                'location': {
-                    "type": "string",
-                    "title": "Processing Location",
-                    "default": "US",
-                },
-                'loadSchema': {
-                    "type": "boolean",
-                    "title": "Load Schema"
-                }
-            }
-        }
-
-    def _get_project_id(self):
-        return requests.get('http://metadata/computeMetadata/v1/project/project-id', headers={'Metadata-Flavor': 'Google'}).content
-
-    def _get_bigquery_service(self):
-        credentials = gce.AppAssertionCredentials(scope='https://www.googleapis.com/auth/bigquery')
-        http = httplib2.Http()
-        http = credentials.authorize(http)
-
-        return build("bigquery", "v2", http=http)
-
-
 register(BigQuery)
-register(BigQueryGCE)

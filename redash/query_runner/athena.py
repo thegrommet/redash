@@ -1,11 +1,9 @@
-import json
 import logging
 import os
-import simplejson
 
 from redash.query_runner import *
 from redash.settings import parse_boolean
-from redash.utils import SimpleJSONEncoder
+from redash.utils import json_dumps, json_loads
 
 logger = logging.getLogger(__name__)
 ANNOTATE_QUERY = parse_boolean(os.environ.get('ATHENA_ANNOTATE_QUERY', 'true'))
@@ -123,18 +121,20 @@ class Athena(BaseQueryRunner):
                 region_name=self.configuration['region']
                 )
         schema = {}
-        paginator = client.get_paginator('get_tables')
 
-        for database in client.get_databases()['DatabaseList']:
-            iterator = paginator.paginate(DatabaseName=database['Name'])
-            for table in iterator.search('TableList[]'):
-                table_name = '%s.%s' % (database['Name'], table['Name'])
-                if table_name not in schema:
-                    column = [columns['Name'] for columns in table['StorageDescriptor']['Columns']]
-                    schema[table_name] = {'name': table_name, 'columns': column}
-                    for partition in table['PartitionKeys']:
-                        schema[table_name]['columns'].append(partition['Name'])
+        database_paginator = client.get_paginator('get_databases')
+        table_paginator = client.get_paginator('get_tables')
 
+        for databases in database_paginator.paginate():
+            for database in databases['DatabaseList']:
+                iterator = table_paginator.paginate(DatabaseName=database['Name'])
+                for table in iterator.search('TableList[]'):
+                    table_name = '%s.%s' % (database['Name'], table['Name'])
+                    if table_name not in schema:
+                        column = [columns['Name'] for columns in table['StorageDescriptor']['Columns']]
+                        schema[table_name] = {'name': table_name, 'columns': column}
+                        for partition in table.get('PartitionKeys', []):
+                            schema[table_name]['columns'].append(partition['Name'])
         return schema.values()
 
     def get_schema(self, get_stats=False):
@@ -152,7 +152,7 @@ class Athena(BaseQueryRunner):
         if error is not None:
             raise Exception("Failed getting schema.")
 
-        results = json.loads(results)
+        results = json_loads(results)
         for row in results['rows']:
             table_name = '{0}.{1}'.format(row['table_schema'], row['table_name'])
             if table_name not in schema:
@@ -195,9 +195,9 @@ class Athena(BaseQueryRunner):
                     'athena_query_id': athena_query_id
                 }
             }
-            json_data = simplejson.dumps(data, ignore_nan=True, cls=SimpleJSONEncoder)
+            json_data = json_dumps(data, ignore_nan=True)
             error = None
-        except KeyboardInterrupt:
+        except (KeyboardInterrupt, InterruptException):
             if cursor.query_id:
                 cursor.cancel()
             error = "Query cancelled by user."

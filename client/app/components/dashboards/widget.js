@@ -1,7 +1,22 @@
+import { filter } from 'lodash';
 import template from './widget.html';
 import editTextBoxTemplate from './edit-text-box.html';
+import widgetDialogTemplate from './widget-dialog.html';
+import EditParameterMappingsDialog from '@/components/dashboards/EditParameterMappingsDialog';
 import './widget.less';
-import './add-widget-dialog.less';
+import './widget-dialog.less';
+
+const WidgetDialog = {
+  template: widgetDialogTemplate,
+  bindings: {
+    resolve: '<',
+    close: '&',
+    dismiss: '&',
+  },
+  controller() {
+    this.widget = this.resolve.widget;
+  },
+};
 
 const EditTextBoxComponent = {
   template: editTextBoxTemplate,
@@ -37,7 +52,7 @@ const EditTextBoxComponent = {
   },
 };
 
-function DashboardWidgetCtrl($location, $uibModal, $window, Events, currentUser) {
+function DashboardWidgetCtrl($scope, $location, $uibModal, $window, $rootScope, $timeout, Events, currentUser) {
   this.canViewQuery = currentUser.hasPermission('view_query');
 
   this.editTextBox = () => {
@@ -51,12 +66,40 @@ function DashboardWidgetCtrl($location, $uibModal, $window, Events, currentUser)
     });
   };
 
+  this.expandVisualization = () => {
+    $uibModal.open({
+      component: 'widgetDialog',
+      resolve: {
+        widget: this.widget,
+      },
+      size: 'lg',
+    });
+  };
+
+  this.hasParameters = () => this.widget.query.getParametersDefs().length > 0;
+
+  this.editParameterMappings = () => {
+    EditParameterMappingsDialog.showModal({
+      dashboard: this.dashboard,
+      widget: this.widget,
+    }).result.then((valuesChanged) => {
+      this.localParameters = null;
+
+      // refresh widget if any parameter value has been updated
+      if (valuesChanged) {
+        $timeout(() => this.refresh());
+      }
+      $scope.$applyAsync();
+      $rootScope.$broadcast('dashboard.update-parameters');
+    });
+  };
+
   this.localParametersDefs = () => {
     if (!this.localParameters) {
-      this.localParameters = this.widget
-        .getQuery()
-        .getParametersDefs()
-        .filter(p => !p.global);
+      this.localParameters = filter(
+        this.widget.getParametersDefs(),
+        param => !this.widget.isStaticParam(param),
+      );
     }
     return this.localParameters;
   };
@@ -65,8 +108,6 @@ function DashboardWidgetCtrl($location, $uibModal, $window, Events, currentUser)
     if (!$window.confirm(`Are you sure you want to remove "${this.widget.getName()}" from the dashboard?`)) {
       return;
     }
-
-    Events.record('delete', 'widget', this.widget.id);
 
     this.widget.delete().then(() => {
       if (this.deleted) {
@@ -101,6 +142,7 @@ function DashboardWidgetCtrl($location, $uibModal, $window, Events, currentUser)
 
 export default function init(ngModule) {
   ngModule.component('editTextBox', EditTextBoxComponent);
+  ngModule.component('widgetDialog', WidgetDialog);
   ngModule.component('dashboardWidget', {
     template,
     controller: DashboardWidgetCtrl,
@@ -112,3 +154,5 @@ export default function init(ngModule) {
     },
   });
 }
+
+init.init = true;

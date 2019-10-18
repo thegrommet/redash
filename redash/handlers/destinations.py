@@ -4,7 +4,7 @@ from flask_restful import abort
 from redash import models
 from redash.destinations import (destinations,
                                  get_configuration_schema_for_destination_type)
-from redash.handlers.base import BaseResource
+from redash.handlers.base import BaseResource, require_fields
 from redash.permissions import require_admin
 from redash.utils.configuration import ConfigurationContainer, ValidationError
 
@@ -19,7 +19,13 @@ class DestinationResource(BaseResource):
     @require_admin
     def get(self, destination_id):
         destination = models.NotificationDestination.get_by_id_and_org(destination_id, self.current_org)
-        return destination.to_dict(all=True)
+        d = destination.to_dict(all=True)
+        self.record_event({
+            'action': 'view',
+            'object_id': destination_id,
+            'object_type': 'destination',
+        })
+        return d
 
     @require_admin
     def post(self, destination_id):
@@ -48,6 +54,12 @@ class DestinationResource(BaseResource):
         models.db.session.delete(destination)
         models.db.session.commit()
 
+        self.record_event({
+            'action': 'delete',
+            'object_id': destination_id,
+            'object_type': 'destination'
+        })
+
         return make_response('', 204)
 
 
@@ -63,15 +75,18 @@ class DestinationListResource(BaseResource):
             d = ds.to_dict()
             response[ds.id] = d
 
+        self.record_event({
+            'action': 'list',
+            'object_id': 'admin/destinations',
+            'object_type': 'destination',
+        })
+
         return response.values()
 
     @require_admin
     def post(self):
         req = request.get_json(True)
-        required_fields = ('options', 'name', 'type')
-        for f in required_fields:
-            if f not in req:
-                abort(400)
+        require_fields(req, ('options', 'name', 'type'))
 
         schema = get_configuration_schema_for_destination_type(req['type'])
         if schema is None:

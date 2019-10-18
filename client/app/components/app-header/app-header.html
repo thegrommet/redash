@@ -67,7 +67,7 @@
 
       <!-- Add New Button -->
       <div class="btn-group navbar-btn navbar-left btn__new hidden-xs" uib-dropdown is-open="status.isopen">
-        <button id="create-button" type="button" class="btn btn-primary btn--create" uib-dropdown-toggle ng-disabled="disabled">
+        <button id="create-button" data-test="CreateButton" type="button" class="btn btn-primary btn--create" uib-dropdown-toggle ng-disabled="disabled">
           Create <span class="caret caret--nav"></span>
         </button>
         <ul class="dropdown-menu" uib-dropdown-menu role="menu" aria-labelledby="create-button">
@@ -79,6 +79,9 @@
 
       <!-- Profile -->
       <ul class="nav navbar-nav navbar-right">
+        <li>
+          <help-trigger type="'HOME'" class-name="'navbar-link-ANGULAR_REMOVE_ME'"></help-trigger>
+        </li>
         <li ng-show="$ctrl.currentUser.isAdmin">
           <a href="data_sources" title="Settings"><i class="fa fa-sliders" aria-hidden="true"></i></a>
         </li>
@@ -86,7 +89,7 @@
           <!--<a href="users" title="Settings"><i class="fa fa-cog"></i></a>-->
         <!--</li>-->
         <li class="dropdown" uib-dropdown>
-          <a href="#" class="dropdown-toggle dropdown--profile" uib-dropdown-toggle>
+          <a href="#" class="dropdown-toggle dropdown--profile" uib-dropdown-toggle data-test="ProfileDropdown">
             <img ng-src="{{ $ctrl.currentUser.profile_image_url }}" class="profile__image--navbar" width="20"/>
             <span class="dropdown--profile__username" ng-bind="$ctrl.currentUser.name"></span> <span
             class="caret caret--nav"></span></a>
@@ -112,7 +115,7 @@
               <a href="destinations" title="Settings">Alert Destinations</a>
             </li>
 
-            <li  ng-if="$ctrl.currentUser.hasPermission('super_admin')" class="divider"></li>
+            <li ng-if="$ctrl.currentUser.hasPermission('super_admin')" class="divider"></li>
 
             <li ng-if="$ctrl.currentUser.hasPermission('super_admin')"><a href="admin/status">System Status</a></li>
 
@@ -121,6 +124,19 @@
             <li>
               <a ng-click="$ctrl.logout()">Log out</a>
             </li>
+
+            <li class="divider"></li>
+            <li class="dropdown-menu__version">
+              Version: {{$ctrl.backendVersion}}
+              <span ng-if="$ctrl.frontendVersion !== $ctrl.backendVersion">
+                ({{$ctrl.frontendVersion.substring(0, 8)}})
+              </span>
+              <span class="update-available" ng-if="$ctrl.currentUser.hasPermission('super_admin') && $ctrl.newVersionAvailable">
+                <a href="https://version.redash.io/" target="_blank">
+                  <i class="fa fa-arrow-circle-down"></i>
+                </a>
+              </span>
+            </li>
           </ul>
         </li>
       </ul>
@@ -128,7 +144,7 @@
       <!-- Search -->
       <form class="navbar-form navbar-right" role="search" ng-submit="$ctrl.searchQueries()">
         <div class="input-group menu-search">
-          <input type="text" ng-model="$ctrl.term" class="form-control navbar__search__input" placeholder="Search queries...">
+          <input type="text" ng-model="$ctrl.searchTerm" class="form-control navbar__search__input" placeholder="Search queries...">
           <span class="input-group-btn">
             <button type="submit" class="btn btn-default"><span class="zmdi zmdi-search"></span></button>
           </span>
